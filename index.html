@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>5 Seconds Learn – Video Maker</title>
+<style>
+:root{--bg:#f6f7fb;--fg:#1d2433;--card:#fff;--ac:#2f6fed;--bd:#dde1ea}
+@media(prefers-color-scheme:dark){:root{--bg:#141820;--fg:#e8ebf2;--card:#1d222d;--bd:#2d3444}}
+*{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,Arial,sans-serif;background:var(--bg);color:var(--fg)}
+main{max-width:960px;margin:auto;padding:20px;display:grid;gap:18px;grid-template-columns:1fr 320px}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+h1{grid-column:1/-1;margin:0;font-size:26px}h2{font-size:15px;margin:16px 0 4px;opacity:.7;text-transform:uppercase}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+label{display:block;font-weight:600;margin:10px 0 3px}small{opacity:.7;display:block}
+input,select{font:inherit;padding:6px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--fg)}
+input[type=file]{width:100%}.sum input{width:80px;text-align:center}.sum{display:flex;gap:8px;align-items:center;font-size:20px}
+button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:12px 20px;font-size:16px;cursor:pointer;margin:14px 8px 0 0}
+button.alt{background:transparent;color:var(--ac);border:1px solid var(--ac)}button:disabled{opacity:.5}
+canvas{width:100%;border-radius:8px;display:block;background:#000}#log{margin-top:10px;font-size:14px;min-height:22px}
+</style></head><body><main>
+<h1>5 Seconds Learn – Video Maker</h1>
+<section class="card">
+<h2>Every video</h2>
+<label>Green board</label><input type="file" id="fBoard" accept="image/*">
+<label>Object</label><input type="file" id="fObj" accept="image/*">
+<label>The sum</label>
+<div class="sum"><input id="a" type="number" min="0" max="99" value="1"><select id="op"><option>+</option><option>−</option><option>×</option><option>÷</option></select><input id="b" type="number" min="0" max="99" value="4"> = <b id="ans">5</b></div>
+<h2>One time only (saved in this browser)</h2>
+<label>Chalk digits and symbols</label>
+<input type="file" id="fGly" accept="image/*" multiple>
+<small>Name the files: 0 1 2 3 4 5 6 7 8 9 plus minus times divide equals</small>
+<label>Logo countdown video</label><input type="file" id="fLogo" accept="video/*,.webm">
+<div id="saved"></div>
+<button id="bGo">Create video + 4 voices</button><button id="bPrev" class="alt">Preview</button>
+<div id="log"></div>
+<small>When asked, choose “This tab” and tick “Also share tab audio”. Keep the tab open (about 1 minute).</small>
+</section>
+<aside class="card"><canvas id="cv" width="720" height="1280"></canvas></aside>
+</main>
+<script>
+const W=720,H=1280,S=W/1080,SR=44100,FPS=30;
+const T={B:1,PLUS:.5,EQ:1.6,CD:2,DROP:7,ANS:7.8,END:9.8};
+const $=id=>document.getElementById(id),cv=$('cv'),ctx=cv.getContext('2d'),log=m=>$('log').textContent=m,sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const cl=x=>Math.max(0,Math.min(1,x)),backOut=t=>{t=cl(t);return 1+2.70158*(t-1)**3+1.70158*(t-1)**2},inQ=t=>cl(t)**2,outC=t=>1-(1-cl(t))**3;
+const A={board:null,obj:null,gly:{},logo:null};let dbp;
+
+/* ---- tiny storage so digits & logo are uploaded once ---- */
+const db=()=>dbp||(dbp=new Promise(r=>{const q=indexedDB.open('5sl',1);q.onupgradeneeded=()=>q.result.createObjectStore('f');q.onsuccess=()=>r(q.result)}));
+const put=async(k,v)=>{try{(await db()).transaction('f','readwrite').objectStore('f').put(v,k)}catch(e){}};
+const get=async k=>{try{const d=await db();return await new Promise(r=>{const q=d.transaction('f').objectStore('f').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r()})}catch(e){}};
+const img=f=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=URL.createObjectURL(f)});
+const ALIAS={plus:'+',add:'+',minus:'−',sub:'−',times:'×',mult:'×',multiply:'×',divide:'÷',div:'÷',equals:'=',equal:'='};
+async function setGly(files){A.gly={};for(const f of files){let n=f.name.replace(/\.[^.]+$/,'').toLowerCase();n=ALIAS[n]||n;if(n.length===1)A.gly[n]=await img(f)}
+  $('saved').textContent='Saved: '+Object.keys(A.gly).join(' ')+(A.logo?'  + logo video':'')}
+function setLogo(f){const v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';v.src=URL.createObjectURL(f);A.logo=v}
+$('fBoard').onchange=async e=>A.board=await img(e.target.files[0]);
+$('fObj').onchange=async e=>A.obj=await img(e.target.files[0]);
+$('fGly').onchange=async e=>{const f=[...e.target.files];await setGly(f);put('gly',f)};
+$('fLogo').onchange=e=>{setLogo(e.target.files[0]);put('logo',e.target.files[0]);$('saved').textContent+=' + logo video'};
+(async()=>{const g=await get('gly'),l=await get('logo');if(l)setLogo(l);if(g)await setGly(g)})();
+
+/* ---- the sum ---- */
+const calc=(a,op,b)=>op==='+'?a+b:op==='−'?a-b:op==='×'?a*b:a/b;
+const cur=()=>({a:+$('a').value,b:+$('b').value,op:$('op').value});
+const upd=()=>{const{a,b,op}=cur(),r=calc(a,op,b);$('ans').textContent=Number.isInteger(r)&&r>=0?r:'?'};
+['a','b','op'].forEach(i=>$(i).oninput=upd);
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function cluster(n,z,seed){const R=rng(seed),p=[],md=95*S;let k=0;while(p.length<n&&k++<4000){const q=[z[0]+R()*(z[1]-z[0]),z[2]+R()*(z[3]-z[2])];if(k>3000||p.every(o=>Math.hypot(o[0]-q[0],o[1]-q[1])>md))p.push(q)}return p}
+function prep(){const{a,b,op}=cur(),ans=calc(a,op,b);
+  if(!(Number.isInteger(ans)&&ans>=0&&ans<=9999))throw'Please choose a sum with a whole, non-negative answer.';
+  const s=a*100+b*7+op.charCodeAt(0),R=rng(s+9);
+  return{a,b,op,ans,pa:a<=12?cluster(a,[W*.08,W*.32,H*.17,H*.28],s+1):[],pb:b<=12?cluster(b,[W*.55,W*.92,H*.15,H*.31],s+2):[],
+  pans:ans<=20?cluster(ans,[W*.06,W*.56,H*.66,H*.94],s+3):[],burst:Array.from({length:40},()=>({a:R()*6.283,r:120+R()*260,s:16+R()*22,c:['#ffd73c','#ff7878','#78dcff','#fff'][R()*4|0]}))}}
+
+/* ---- drawing ---- */
+function glyphs(str,cx,cy,h,sc,maxW){
+  if(sc<=.01)return;str=String(str);const gap=.06*h,ws=[...str].map(c=>A.gly[c]?A.gly[c].width/A.gly[c].height*h:h*.6);
+  const tot=ws.reduce((x,y)=>x+y+gap,-gap),k=Math.min(1,maxW/tot)*sc;let x=cx-tot*k/2;
+  [...str].forEach((c,i)=>{const w=ws[i]*k,hh=h*k;
+    if(A.gly[c])ctx.drawImage(A.gly[c],x,cy-hh/2,w,hh);else{ctx.fillStyle='#fff';ctx.font=`bold ${hh}px sans-serif`;ctx.textBaseline='middle';ctx.fillText(c,x,cy)}x+=w+gap*k})}
+function obj(x,y,sc){if(sc<=.01)return;const s=120*S*sc,im=A.obj;
+  if(im){const k=Math.min(s/im.width,s/im.height);ctx.drawImage(im,x-im.width*k/2,y-im.height*k/2,im.width*k,im.height*k)}
+  else{ctx.beginPath();ctx.arc(x,y,s/2,0,6.283);ctx.fillStyle='#9b8cf0';ctx.fill();ctx.lineWidth=4*S;ctx.strokeStyle='#fff';ctx.stroke()}}
+function boardBg(){if(A.board){ctx.drawImage(A.board,0,0,W,H);return}ctx.fillStyle='#265c3e';ctx.fillRect(0,0,W,H);ctx.lineWidth=26*S;ctx.strokeStyle='#b07038';ctx.strokeRect(13*S,13*S,W-26*S,H-26*S)}
+function logoFrame(x,y,sc,al){const v=A.logo;if(!v||v.readyState<2){ctx.beginPath();ctx.arc(x,y,165*S*sc,0,6.283);ctx.fillStyle='#2878dc';ctx.fill();return}
+  const m=450*S*sc,k=Math.min(m/v.videoWidth,m/v.videoHeight);ctx.save();ctx.globalAlpha=al;ctx.drawImage(v,x-v.videoWidth*k/2,y-v.videoHeight*k/2,v.videoWidth*k,v.videoHeight*k);ctx.restore()}
+let logoOn=false;
+function draw(r,t){
+  boardBg();const h=200*S;
+  glyphs(r.a,W*.2,H*.085,h,backOut(t/.35),W*.3);
+  if(t>=T.PLUS)glyphs(r.op,W*.5,H*.165,190*S,backOut((t-T.PLUS)/.35),W*.2);
+  if(t>=T.B)glyphs(r.b,W*.8,H*.085,h,backOut((t-T.B)/.35),W*.3);
+  const src=[...r.pa,...r.pb];
+  src.forEach(([x,y],i)=>{const isB=i>=r.pa.length,k=isB?i-r.pa.length:i,tt=t-((isB?T.B:0)+.15+k*.07);if(tt<0)return;
+    let px=x,py=y;if(t>=T.DROP&&i<r.pans.length){const p=inQ((t-T.DROP)/.8);px+=(r.pans[i][0]-x)*p;py+=(r.pans[i][1]-y)*p}obj(px,py,backOut(tt/.3))});
+  if(t>=T.DROP)r.pans.slice(src.length).forEach(([x,y])=>obj(x,y,backOut((t-T.DROP-.4)/.3)));
+  if(t>=T.EQ)glyphs('=',W*.17,H*.385,190*S,backOut((t-T.EQ)/.3),W*.2);
+  const cx=W*.62,cy=H*.385;
+  if(A.logo){if(t>=T.CD&&!logoOn){logoOn=true;A.logo.currentTime=0;A.logo.play().catch(()=>{})}if(t<T.CD&&logoOn){logoOn=false;A.logo.pause()}}
+  if(t>=T.CD&&t<T.DROP)logoFrame(cx,cy,1,1);
+  else if(t>=T.DROP&&t<T.ANS){const l=(t-T.DROP)/.8;logoFrame(cx,cy,1+.3*l,1-l)}
+  if(t>=T.ANS){const l=t-T.ANS;glyphs(r.ans,W*.72,H*.89,270*S,backOut(l/.45),W*.5);
+    if(l<.6){const p=l/.6;r.burst.forEach(b=>{const d=b.r*S*outC(p);ctx.beginPath();ctx.arc(cx+Math.cos(b.a)*d,cy+Math.sin(b.a)*d,Math.max(0,b.s*S*(1-p)),0,6.283);ctx.fillStyle=b.c;ctx.fill()})}}
+}
+const run=(r,onT)=>new Promise(res=>{const s=performance.now();logoOn=false;(function f(){const t=(performance.now()-s)/1000;draw(r,Math.min(t,T.END));onT&&onT(t);t<T.END?requestAnimationFrame(f):res()})()});
+
+/* ---- sound effects + voices ---- */
+function tone(ac,o,t0,f,d,v=.3){const s=ac.createOscillator(),g=ac.createGain();s.frequency.value=f;g.gain.setValueAtTime(v,t0);g.gain.exponentialRampToValueAtTime(.001,t0+d);s.connect(g).connect(o);s.start(t0);s.stop(t0+d+.05)}
+function fx(ac,o){[[.05,660],[T.PLUS+.05,740],[T.B+.05,660],[T.EQ+.05,590]].forEach(([t,f])=>tone(ac,o,t,f,.25));
+  for(let k=0;k<5;k++)tone(ac,o,T.CD+k,k<4?880:1100,.35);[523,659,784,1046].forEach((f,j)=>tone(ac,o,T.ANS+j*.09,f,.5))}
+const LANGS={en:{c:'en-US',p:{'+':'plus','−':'minus','×':'times','÷':'divided by','=':'equals'}},
+ ar:{c:'ar-SA',p:{'+':'زائد','−':'ناقص','×':'ضرب','÷':'تقسيم','=':'يساوي'}},
+ es:{c:'es-ES',p:{'+':'más','−':'menos','×':'por','÷':'dividido entre','=':'es igual a'}},
+ tr:{c:'tr-TR',p:{'+':'artı','−':'eksi','×':'çarpı','÷':'bölü','=':'eşittir'}}};
+function say(txt,code){const u=new SpeechSynthesisUtterance(txt),vs=speechSynthesis.getVoices().filter(v=>v.lang.replace('_','-').toLowerCase().startsWith(code.slice(0,2)));
+  u.voice=vs.find(v=>!v.localService)||vs[0]||null;u.lang=code;u.rate=.85;speechSynthesis.speak(u)}
+async function captureVoice(L,r,stream){
+  const rec=new MediaRecorder(new MediaStream(stream.getAudioTracks())),ch=[];rec.ondataavailable=e=>ch.push(e.data);
+  await new Promise(res=>{rec.onstart=res;rec.start()});speechSynthesis.cancel();
+  setTimeout(()=>say(`${r.a} ${L.p[r.op]} ${r.b} ${L.p['=']}`,L.c),300);setTimeout(()=>say(String(r.ans),L.c),T.ANS*1000+100);
+  await sleep(T.END*1000+400);rec.stop();await sleep(200);
+  const ac=new OfflineAudioContext(1,SR*T.END,SR);let voice=null,peak=0;
+  try{const b=await new AudioContext().decodeAudioData(await new Blob(ch).arrayBuffer());b.getChannelData(0).forEach(x=>peak=Math.max(peak,Math.abs(x)));
+    const s=ac.createBufferSource();s.buffer=b;s.connect(ac.destination);s.start(0);voice=true}catch(e){}
+  fx(ac,ac.destination);const out=await ac.startRendering();return{buf:out,silent:!voice||peak<.01}}
+function wav(buf){const d=buf.getChannelData(0),n=d.length,o=new DataView(new ArrayBuffer(44+n*2)),w=(p,s)=>[...s].forEach((c,i)=>o.setUint8(p+i,c.charCodeAt(0)));
+  w(0,'RIFF');o.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');o.setUint32(16,16,true);o.setUint16(20,1,true);o.setUint16(22,1,true);o.setUint32(24,SR,true);o.setUint32(28,SR*2,true);o.setUint16(32,2,true);o.setUint16(34,16,true);w(36,'data');o.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)o.setInt16(44+i*2,Math.max(-1,Math.min(1,d[i]))*32767,true);return new Blob([o],{type:'audio/wav'})}
+const save=(b,n)=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;document.body.appendChild(a);a.click();a.remove()};
+const lock=b=>{$('bGo').disabled=$('bPrev').disabled=b};
+
+$('bPrev').onclick=async()=>{try{const r=prep();lock(true);log('Preview…');const ac=new AudioContext();fx(ac,ac.destination);await run(r);ac.close();log('Preview done.')}catch(e){log(e)}lock(false)};
+$('bGo').onclick=async()=>{
+  let r;try{r=prep()}catch(e){return log(e)}
+  if(!window.MediaRecorder)return log('Please use Chrome or Edge.');
+  lock(true);let stream;
+  try{log('Choose “This tab” and tick “Also share tab audio”…');stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true,preferCurrentTab:true,selfBrowserSurface:'include'});
+    if(!stream.getAudioTracks().length)throw'No tab audio was shared. Run again and tick “Also share tab audio”.'}catch(e){lock(false);return log(e.message||e)}
+  const name=`${r.a}${{'+':'plus','−':'minus','×':'times','÷':'div'}[r.op]}${r.b}`,mix={},bad=[];
+  for(const k of Object.keys(LANGS)){log(`Recording ${k.toUpperCase()} voice… (you will hear it)`);const o=await captureVoice(LANGS[k],r,stream);mix[k]=o.buf;if(o.silent)bad.push(k.toUpperCase());save(wav(o.buf),`voice_${k}_${name}.wav`)}
+  stream.getTracks().forEach(t=>t.stop());
+  log('Recording the video (English sound)…');
+  const ac=new AudioContext(),dest=ac.createMediaStreamDestination(),s=ac.createBufferSource();s.buffer=mix.en;s.connect(dest);
+  const vs=cv.captureStream(FPS);dest.stream.getAudioTracks().forEach(t=>vs.addTrack(t));
+  const mime=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m)),ch=[],rec=new MediaRecorder(vs,{mimeType:mime,videoBitsPerSecond:6e6});
+  rec.ondataavailable=e=>e.data.size&&ch.push(e.data);const done=new Promise(res=>rec.onstop=res);rec.start();s.start();await run(r);await sleep(200);rec.stop();await done;ac.close();
+  save(new Blob(ch,{type:rec.mimeType}),`video_${name}.${mime.includes('mp4')?'mp4':'webm'}`);
+  lock(false);log(bad.length?`Done, but the ${bad.join(', ')} voice file(s) came out silent. Your browser doesn’t share that voice’s sound – try Chrome on desktop.`:'Done – 1 video + 4 voice files downloaded.');
+};
+upd();
+</script></body></html>
